@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chess</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1a2e;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: 'Segoe UI', sans-serif;
+    color: #eee;
+  }
+  h1 { font-size: 2rem; margin-bottom: 14px; letter-spacing: 2px; color: #e2b96f; }
+
+  #status {
+    font-size: 1.1rem;
+    margin-bottom: 12px;
+    min-height: 1.5em;
+    color: #ccc;
+    background: #16213e;
+    padding: 8px 28px;
+    border-radius: 20px;
+    border: 1px solid #2a2a4a;
+    transition: color 0.3s;
+  }
+
+  /* Board wrapper — this whole block flips together */
+  #flip-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transform-origin: center center;
+    transition: transform 0.22s ease-in;
+    will-change: transform;
+  }
+
+  .rank-labels { display: flex; flex-direction: column; }
+  .rank-label {
+    width: 20px; height: 72px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.82rem; color: #888;
+  }
+  .file-labels { display: flex; margin-left: 20px; }
+  .file-label {
+    width: 72px; text-align: center;
+    font-size: 0.82rem; color: #888; margin-top: 4px;
+  }
+
+  #board {
+    display: grid;
+    grid-template-columns: repeat(8, 72px);
+    grid-template-rows: repeat(8, 72px);
+    width: 576px;
+    height: 576px;
+    border: 3px solid #4a4a6a;
+    border-radius: 4px;
+    overflow: hidden;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+  }
+
+  .square {
+    width: 72px; height: 72px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; position: relative;
+    transition: background 0.12s;
+  }
+  .square.light { background: #f0d9b5; }
+  .square.dark  { background: #b58863; }
+  .square.selected      { background: #f6f669 !important; }
+  .square.last-move.light { background: #cdd26a !important; }
+  .square.last-move.dark  { background: #aaa23a !important; }
+  .square.check         { background: #e74c3c !important; }
+
+  /* Valid move dot */
+  .square.valid-move::after {
+    content: '';
+    position: absolute;
+    width: 26px; height: 26px;
+    background: rgba(0,0,0,0.17);
+    border-radius: 50%;
+    pointer-events: none;
+    animation: popIn 0.15s ease;
+  }
+  /* Valid capture ring */
+  .square.valid-capture::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border: 6px solid rgba(0,0,0,0.17);
+    border-radius: 0;
+    pointer-events: none;
+    animation: popIn 0.15s ease;
+  }
+
+  @keyframes popIn {
+    from { transform: scale(0.4); opacity: 0; }
+    to   { transform: scale(1);   opacity: 1; }
+  }
+
+  .piece {
+    font-size: 46px;
+    line-height: 1;
+    user-select: none;
+    position: relative; z-index: 1;
+    transition: transform 0.12s;
+  }
+  .piece.black-piece {
+    color: #1a1a1a;
+    text-shadow: 1px 2px 4px rgba(0,0,0,0.4);
+  }
+  .square:hover .piece { transform: scale(1.08); }
+  .square.selected .piece { transform: scale(1.12); }
+
+  /* Animated piece overlay (fixed, outside board) */
+  .piece-anim {
+    font-size: 46px;
+    line-height: 1;
+    user-select: none;
+    text-shadow: 1px 2px 4px rgba(0,0,0,0.35);
+    position: fixed;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none;
+    z-index: 999;
+    transition: left 0.22s cubic-bezier(0.25,0.8,0.25,1),
+                top  0.22s cubic-bezier(0.25,0.8,0.25,1),
+                transform 0.22s cubic-bezier(0.25,0.8,0.25,1);
+    transform: scale(1.15);
+  }
+
+  #controls {
+    margin-top: 14px;
+    display: flex; gap: 10px;
+  }
+  button {
+    padding: 9px 22px;
+    border: none; border-radius: 8px;
+    font-size: 0.95rem; cursor: pointer;
+    background: #e2b96f; color: #1a1a2e;
+    font-weight: bold;
+    transition: background 0.18s, transform 0.1s;
+  }
+  button:hover { background: #f0c97a; transform: translateY(-1px); }
+  button:active { transform: translateY(0); }
+  button.active { background: #7ecba1; }
+
+  #captured {
+    margin-top: 10px;
+    display: flex; flex-direction: column;
+    gap: 3px; align-items: center;
+  }
+  .captured-row { font-size: 1.25rem; min-height: 1.6em; letter-spacing: 2px; }
+  .captured-label { font-size: 0.72rem; color: #666; }
+
+  /* Promotion modal */
+  #promo-modal {
+    display: none; position: fixed;
+    inset: 0; background: rgba(0,0,0,0.72);
+    z-index: 200; align-items: center; justify-content: center;
+  }
+  #promo-modal.show { display: flex; }
+  #promo-box {
+    background: #16213e; border: 2px solid #e2b96f;
+    border-radius: 14px; padding: 26px; text-align: center;
+    animation: slideUp 0.2s ease;
+  }
+  @keyframes slideUp {
+    from { transform: translateY(20px); opacity: 0; }
+    to   { transform: translateY(0);    opacity: 1; }
+  }
+  #promo-box h2 { margin-bottom: 16px; color: #e2b96f; }
+  #promo-pieces { display: flex; gap: 12px; justify-content: center; }
+  .promo-piece {
+    font-size: 52px; cursor: pointer;
+    padding: 8px; border-radius: 8px;
+    border: 2px solid transparent;
+    transition: border-color 0.15s, background 0.15s, transform 0.1s;
+  }
+  .promo-piece:hover { border-color: #e2b96f; background: #0f3460; transform: scale(1.1); }
+</style>
+</head>
+<body>
+
+<h1>&#9812; Chess</h1>
+<div id="status">White's turn</div>
+
+<div id="flip-container">
+  <div class="rank-labels" id="rank-labels"></div>
+  <div>
+    <div id="board"></div>
+    <div class="file-labels" id="file-labels"></div>
+  </div>
+</div>
+
+<div id="captured">
+  <div class="captured-label">Captured by White</div>
+  <div class="captured-row" id="white-captured"></div>
+  <div class="captured-label">Captured by Black</div>
+  <div class="captured-row" id="black-captured"></div>
+</div>
+
+<div id="controls">
+  <button onclick="newGame()">New Game</button>
+  <button onclick="undoMove()">Undo</button>
+  <button id="flipBtn" onclick="toggleAutoFlip()" class="active">Auto-Flip: ON</button>
+</div>
+
+<div id="promo-modal">
+  <div id="promo-box">
+    <h2>Pawn Promotion</h2>
+    <div id="promo-pieces"></div>
+  </div>
+</div>
+
+<script>
+// ── Pieces ────────────────────────────────────────────────────────────────────
+const PIECES = {
+  wK:'♔', wQ:'♕', wR:'♖', wB:'♗', wN:'♘', wP:'♙',
+  bK:'♚', bQ:'♛', bR:'♜', bB:'♝', bN:'♞', bP:'♟'
+};
+const INIT_BOARD = [
+  ['bR','bN','bB','bQ','bK','bB','bN','bR'],
+  ['bP','bP','bP','bP','bP','bP','bP','bP'],
+  [null,null,null,null,null,null,null,null],
+  [null,null,null,null,null,null,null,null],
+  [null,null,null,null,null,null,null,null],
+  [null,null,null,null,null,null,null,null],
+  ['wP','wP','wP','wP','wP','wP','wP','wP'],
+  ['wR','wN','wB','wQ','wK','wB','wN','wR']
+];
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let board, turn, selected, validMoves, history, capturedByWhite, capturedByBlack;
+let enPassantTarget, castlingRights, promoCallback, lastMove;
+let flipped = false;      // board orientation
+let autoFlip = true;      // auto-flip on each turn
+let animating = false;    // block input during animations
+let animatingTo = null;   // [r,c] of destination — hide piece there during slide
+
+// ── Audio ─────────────────────────────────────────────────────────────────────
+let audioCtx = null;
+function getCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
+function playSound(type) {
+  try {
+    const c = getCtx();
+    const t = c.currentTime;
+
+    const osc = (freq, wave='sine') => {
+      const o = c.createOscillator();
+      o.type = wave;
+      o.frequency.setValueAtTime(freq, t);
+      return o;
+    };
+    const env = (peak, decay) => {
+      const g = c.createGain();
+      g.gain.setValueAtTime(peak, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + decay);
+      return g;
+    };
+    const note = (freq, wave, peak, decay, delay=0) => {
+      const o = c.createOscillator();
+      const g = c.createGain();
+      o.type = wave; o.frequency.setValueAtTime(freq, t+delay);
+      g.gain.setValueAtTime(0, t+delay);
+      g.gain.linearRampToValueAtTime(peak, t+delay+0.01);
+      g.gain.exponentialRampToValueAtTime(0.001, t+delay+decay);
+      o.connect(g); g.connect(c.destination);
+      o.start(t+delay); o.stop(t+delay+decay+0.02);
+    };
+
+    if (type === 'move') {
+      // Soft wooden click
+      const o = osc(380); const g = env(0.45, 0.09);
+      o.frequency.exponentialRampToValueAtTime(140, t+0.08);
+      o.connect(g); g.connect(c.destination);
+      o.start(); o.stop(t+0.1);
+      // subtle high tick
+      note(1200, 'sine', 0.08, 0.04);
+
+    } else if (type === 'capture') {
+      // Heavier thud with crunch
+      const o = osc(220, 'sawtooth'); const g = env(0.35, 0.13);
+      o.frequency.exponentialRampToValueAtTime(55, t+0.12);
+      o.connect(g); g.connect(c.destination);
+      o.start(); o.stop(t+0.15);
+      note(600, 'square', 0.12, 0.07);
+
+    } else if (type === 'castle') {
+      note(440, 'sine', 0.28, 0.18, 0);
+      note(660, 'sine', 0.22, 0.18, 0.12);
+
+    } else if (type === 'check') {
+      note(880,  'sine', 0.3, 0.25, 0);
+      note(1100, 'sine', 0.25, 0.2, 0.16);
+
+    } else if (type === 'checkmate') {
+      [523, 494, 440, 392].forEach((f, i) =>
+        note(f, 'sine', 0.32, 0.38, i * 0.22));
+
+    } else if (type === 'stalemate') {
+      note(440, 'sine', 0.28, 0.6, 0);
+      note(440, 'sine', 0.18, 0.5, 0.35);
+    }
+  } catch(e) {}
+}
+
+// ── Chess logic ───────────────────────────────────────────────────────────────
+const color = p => p ? p[0] : null;
+const type  = p => p ? p.slice(1) : null;
+const inBounds = (r,c) => r>=0 && r<8 && c>=0 && c<8;
+
+function getValidMoves(board, r, c, enPassant, castling, checkForCheck=true) {
+  const p = board[r][c];
+  if (!p) return [];
+  const col = color(p), t = type(p);
+  const moves = [];
+
+  const add = (nr, nc, special) => {
+    if (!inBounds(nr,nc)) return;
+    if (color(board[nr][nc]) === col) return;
+    moves.push({r:nr, c:nc, special});
+  };
+
+  if (t==='P') {
+    const dir = col==='w'?-1:1, startRow = col==='w'?6:1;
+    if (inBounds(r+dir,c) && !board[r+dir][c]) {
+      add(r+dir,c);
+      if (r===startRow && !board[r+2*dir][c]) add(r+2*dir,c,'double');
+    }
+    for (const dc of [-1,1]) {
+      const nr=r+dir, nc=c+dc;
+      if (inBounds(nr,nc)) {
+        if (color(board[nr][nc])===(col==='w'?'b':'w')) add(nr,nc);
+        else if (enPassant && enPassant[0]===nr && enPassant[1]===nc) add(nr,nc,'enpassant');
+      }
+    }
+  } else if (t==='N') {
+    for (const [dr,dc] of [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]]) add(r+dr,c+dc);
+  } else if (t==='B'||t==='Q') {
+    for (const [dr,dc] of [[-1,-1],[-1,1],[1,-1],[1,1]])
+      for (let i=1;i<8;i++){const nr=r+dr*i,nc=c+dc*i;if(!inBounds(nr,nc))break;add(nr,nc);if(board[nr][nc])break;}
+  }
+  if (t==='R'||t==='Q') {
+    for (const [dr,dc] of [[-1,0],[1,0],[0,-1],[0,1]])
+      for (let i=1;i<8;i++){const nr=r+dr*i,nc=c+dc*i;if(!inBounds(nr,nc))break;add(nr,nc);if(board[nr][nc])break;}
+  }
+  if (t==='K') {
+    for (const [dr,dc] of [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]]) add(r+dr,c+dc);
+    if (checkForCheck && !isInCheck(board, col)) {
+      const row = col==='w'?7:0;
+      if (r===row && c===4) {
+        if (castling[col+'R_k']&&castling[col+'K']&&!board[row][5]&&!board[row][6]
+            &&!squareAttacked(board,row,5,col)&&!squareAttacked(board,row,6,col))
+          moves.push({r:row,c:6,special:'castle_k'});
+        if (castling[col+'R_q']&&castling[col+'K']&&!board[row][3]&&!board[row][2]&&!board[row][1]
+            &&!squareAttacked(board,row,3,col)&&!squareAttacked(board,row,2,col))
+          moves.push({r:row,c:2,special:'castle_q'});
+      }
+    }
+  }
+
+  if (!checkForCheck) return moves;
+  return moves.filter(m => !isInCheck(applyMove(board,r,c,m), col));
+}
+
+function squareAttacked(board, r, c, byOpponent) {
+  const opp = byOpponent==='w'?'b':'w';
+  const fakeCastling = {wK:false,wR_k:false,wR_q:false,bK:false,bR_k:false,bR_q:false};
+  for (let rr=0;rr<8;rr++) for (let cc=0;cc<8;cc++)
+    if (color(board[rr][cc])===opp)
+      if (getValidMoves(board,rr,cc,null,fakeCastling,false).some(m=>m.r===r&&m.c===c)) return true;
+  return false;
+}
+
+function isInCheck(board, col) {
+  for (let r=0;r<8;r++) for (let c=0;c<8;c++)
+    if (board[r][c]===col+'K') return squareAttacked(board,r,c,col);
+  return false;
+}
+
+function applyMove(board, r, c, move) {
+  const nb = board.map(row=>[...row]);
+  const p = nb[r][c], col = color(p);
+  nb[move.r][move.c]=p; nb[r][c]=null;
+  if (move.special==='enpassant') nb[move.r+(col==='w'?1:-1)][move.c]=null;
+  if (move.special==='castle_k'){const row=col==='w'?7:0;nb[row][5]=nb[row][7];nb[row][7]=null;}
+  if (move.special==='castle_q'){const row=col==='w'?7:0;nb[row][3]=nb[row][0];nb[row][0]=null;}
+  return nb;
+}
+
+function hasAnyMoves(board, col, ep, castling) {
+  for (let r=0;r<8;r++) for (let c=0;c<8;c++)
+    if (color(board[r][c])===col && getValidMoves(board,r,c,ep,castling).length>0) return true;
+  return false;
+}
+
+// ── New game / Undo ───────────────────────────────────────────────────────────
+function newGame() {
+  board = INIT_BOARD.map(r=>[...r]);
+  turn='w'; selected=null; validMoves=[]; history=[];
+  capturedByWhite=[]; capturedByBlack=[];
+  enPassantTarget=null; lastMove=null; animatingTo=null; animating=false;
+  castlingRights={wK:true,wR_k:true,wR_q:true,bK:true,bR_k:true,bR_q:true};
+  flipped=false;
+  document.getElementById('promo-modal').classList.remove('show');
+  promoCallback=null;
+  render();
+  setStatus("White's turn");
+}
+
+function undoMove() {
+  if (!history.length || animating) return;
+  const h = history.pop();
+  board=h.board; turn=h.turn; enPassantTarget=h.enPassantTarget;
+  castlingRights=h.castlingRights; capturedByWhite=h.capturedByWhite;
+  capturedByBlack=h.capturedByBlack; lastMove=h.lastMove; flipped=h.flipped;
+  selected=null; validMoves=[]; animatingTo=null;
+  document.getElementById('promo-modal').classList.remove('show');
+  promoCallback=null;
+  render();
+  setStatus(`${turn==='w'?'White':'Black'}'s turn`);
+}
+
+function toggleAutoFlip() {
+  autoFlip = !autoFlip;
+  const btn = document.getElementById('flipBtn');
+  btn.textContent = `Auto-Flip: ${autoFlip?'ON':'OFF'}`;
+  btn.classList.toggle('active', autoFlip);
+}
+
+// ── Click handling ────────────────────────────────────────────────────────────
+function squareClick(vr, vc) {
+  if (promoCallback || animating) return;
+  // Map visual coords → board coords
+  const r = flipped ? 7-vr : vr;
+  const c = flipped ? 7-vc : vc;
+  const p = board[r][c];
+
+  if (selected) {
+    const move = validMoves.find(m=>m.r===r&&m.c===c);
+    if (move) { executeMove(selected[0], selected[1], move); return; }
+  }
+  if (p && color(p)===turn) {
+    selected=[r,c];
+    validMoves=getValidMoves(board,r,c,enPassantTarget,castlingRights);
+  } else { selected=null; validMoves=[]; }
+  render();
+}
+
+// ── Execute move ──────────────────────────────────────────────────────────────
+function executeMove(r, c, move) {
+  if (animating) return;
+  animating = true;
+
+  const p = board[r][c];
+  const col = color(p);
+  const isCapture = !!board[move.r][move.c] || move.special==='enpassant';
+  const isCastle  = move.special==='castle_k'||move.special==='castle_q';
+
+  // Save history before state change
+  history.push({
+    board: board.map(row=>[...row]), turn,
+    enPassantTarget: enPassantTarget?[...enPassantTarget]:null,
+    castlingRights: {...castlingRights},
+    capturedByWhite:[...capturedByWhite],
+    capturedByBlack:[...capturedByBlack],
+    lastMove, flipped
+  });
+
+  // Record captured
+  if (board[move.r][move.c]) (col==='w'?capturedByWhite:capturedByBlack).push(board[move.r][move.c]);
+  if (move.special==='enpassant') {
+    const ep = board[move.r+(col==='w'?1:-1)][move.c];
+    (col==='w'?capturedByWhite:capturedByBlack).push(ep);
+  }
+
+  // Get pixel positions of source & dest BEFORE any DOM change
+  const squares = document.getElementById('board').querySelectorAll('.square');
+  const vFromR = flipped?7-r:r, vFromC = flipped?7-c:c;
+  const vToR   = flipped?7-move.r:move.r, vToC = flipped?7-move.c:move.c;
+  const fromRect = squares[vFromR*8+vFromC].getBoundingClientRect();
+  const toRect   = squares[vToR  *8+vToC  ].getBoundingClientRect();
+
+  // Apply move to board state
+  board = applyMove(board, r, c, move);
+  enPassantTarget = move.special==='double' ? [r+(col==='w'?-1:1),c] : null;
+  if (type(p)==='K'){castlingRights[col+'K']=false;castlingRights[col+'R_k']=false;castlingRights[col+'R_q']=false;}
+  if (p==='wR'){if(r===7&&c===7)castlingRights.wR_k=false;if(r===7&&c===0)castlingRights.wR_q=false;}
+  if (p==='bR'){if(r===0&&c===7)castlingRights.bR_k=false;if(r===0&&c===0)castlingRights.bR_q=false;}
+  lastMove={from:[r,c],to:[move.r,move.c]};
+  selected=null; validMoves=[];
+
+  // Render board with dest square hidden (piece slides in)
+  animatingTo=[move.r,move.c];
+  render();
+
+  // Play sound
+  if (isCastle) playSound('castle');
+  else if (isCapture) playSound('capture');
+  else playSound('move');
+
+  // Create floating animated piece
+  const overlay = document.createElement('span');
+  overlay.className = 'piece piece-anim' + (col==='b' ? ' black-piece' : '');
+  overlay.textContent = PIECES[p];
+  overlay.style.left   = fromRect.left+'px';
+  overlay.style.top    = fromRect.top+'px';
+  overlay.style.width  = fromRect.width+'px';
+  overlay.style.height = fromRect.height+'px';
+  document.body.appendChild(overlay);
+
+  // Kick off slide animation
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    overlay.style.left      = toRect.left+'px';
+    overlay.style.top       = toRect.top+'px';
+    overlay.style.transform = 'scale(1)';
+  }));
+
+  setTimeout(() => {
+    overlay.remove();
+    animatingTo = null;
+
+    // Promotion check
+    const promRow = col==='w'?0:7;
+    if (type(p)==='P' && move.r===promRow) {
+      render();
+      showPromo(col, move.r, move.c, () => {
+        render();
+        doFlipThenFinish(col);
+      });
+      return;
+    }
+
+    render();
+    doFlipThenFinish(col);
+  }, 240);
+}
+
+// ── Board flip animation then finish turn ─────────────────────────────────────
+function doFlipThenFinish(col) {
+  if (!autoFlip) { animating=false; finishTurn(col); return; }
+
+  const container = document.getElementById('flip-container');
+
+  // Phase 1: collapse (scaleX → 0)
+  container.style.transition = 'transform 0.2s ease-in';
+  container.style.transform  = 'scaleX(0)';
+
+  setTimeout(() => {
+    // Mid-flip: swap orientation and re-render instantly
+    flipped = !flipped;
+    render();
+
+    // Phase 2: expand (scaleX 0 → 1)
+    container.style.transition = 'none';
+    container.style.transform  = 'scaleX(0)';
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      container.style.transition = 'transform 0.2s ease-out';
+      container.style.transform  = 'scaleX(1)';
+    }));
+
+    setTimeout(() => {
+      animating = false;
+      finishTurn(col);
+    }, 210);
+  }, 210);
+}
+
+function finishTurn(col) {
+  const next = col==='w'?'b':'w';
+  turn = next;
+  render();
+  const inCheck  = isInCheck(board, next);
+  const anyMoves = hasAnyMoves(board, next, enPassantTarget, castlingRights);
+  if (!anyMoves) {
+    if (inCheck) { playSound('checkmate'); setStatus(`Checkmate! ${col==='w'?'White':'Black'} wins!`); }
+    else         { playSound('stalemate'); setStatus('Stalemate! Draw.'); }
+  } else if (inCheck) {
+    playSound('check');
+    setStatus(`${next==='w'?'White':'Black'} is in check!`);
+  } else {
+    setStatus(`${next==='w'?'White':'Black'}'s turn`);
+  }
+}
+
+// ── Promotion ─────────────────────────────────────────────────────────────────
+function showPromo(col, r, c, cb) {
+  const modal = document.getElementById('promo-modal');
+  const box   = document.getElementById('promo-pieces');
+  box.innerHTML = '';
+  ['Q','R','B','N'].forEach(t => {
+    const el = document.createElement('span');
+    el.className = 'promo-piece';
+    el.textContent = PIECES[col+t];
+    el.onclick = () => {
+      board[r][c]=col+t;
+      modal.classList.remove('show');
+      promoCallback=null;
+      cb();
+    };
+    box.appendChild(el);
+  });
+  modal.classList.add('show');
+  promoCallback = true;
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function setStatus(msg) { document.getElementById('status').textContent = msg; }
+
+function render() {
+  const boardEl = document.getElementById('board');
+  boardEl.innerHTML = '';
+
+  let checkSquare = null;
+  if (isInCheck(board, turn))
+    for (let r=0;r<8;r++) for (let c=0;c<8;c++)
+      if (board[r][c]===turn+'K') checkSquare=`${r},${c}`;
+
+  const validSet     = new Set(validMoves.map(m=>`${m.r},${m.c}`));
+  const captureSet   = new Set(validMoves.filter(m=>board[m.r][m.c]||m.special==='enpassant').map(m=>`${m.r},${m.c}`));
+
+  for (let vr=0;vr<8;vr++) {
+    for (let vc=0;vc<8;vc++) {
+      const r = flipped?7-vr:vr;
+      const c = flipped?7-vc:vc;
+      const key = `${r},${c}`;
+
+      const sq = document.createElement('div');
+      sq.className = 'square '+((r+c)%2===0?'light':'dark');
+
+      if (lastMove && ((lastMove.from[0]===r&&lastMove.from[1]===c)||(lastMove.to[0]===r&&lastMove.to[1]===c)))
+        sq.classList.add('last-move');
+      if (selected && selected[0]===r && selected[1]===c) sq.classList.add('selected');
+      if (key===checkSquare) sq.classList.add('check');
+      if (validSet.has(key)) sq.classList.add(captureSet.has(key)?'valid-capture':'valid-move');
+
+      // Don't render piece at animatingTo (it's the overlay)
+      const hideHere = animatingTo && animatingTo[0]===r && animatingTo[1]===c;
+      if (board[r][c] && !hideHere) {
+        const piece = document.createElement('span');
+        piece.className = 'piece' + (color(board[r][c])==='b' ? ' black-piece' : '');
+        piece.textContent = PIECES[board[r][c]];
+        sq.appendChild(piece);
+      }
+
+      sq.addEventListener('click', () => squareClick(vr, vc));
+      boardEl.appendChild(sq);
+    }
+  }
+
+  // Captured pieces
+  const pieceOrder = ['Q','R','B','N','P'];
+  const sortP = arr => arr.slice().sort((a,b)=>pieceOrder.indexOf(type(a))-pieceOrder.indexOf(type(b)));
+  document.getElementById('white-captured').textContent = sortP(capturedByWhite).map(p=>PIECES[p]).join('');
+  document.getElementById('black-captured').textContent = sortP(capturedByBlack).map(p=>PIECES[p]).join('');
+
+  // Rank / file labels
+  const rankLabels = document.getElementById('rank-labels');
+  rankLabels.innerHTML='';
+  for (let vr=0;vr<8;vr++) {
+    const rank = flipped ? vr+1 : 8-vr;
+    const el = document.createElement('div');
+    el.className='rank-label'; el.textContent=rank;
+    rankLabels.appendChild(el);
+  }
+  const fileLabels = document.getElementById('file-labels');
+  fileLabels.innerHTML='';
+  const files = flipped ? ['h','g','f','e','d','c','b','a'] : ['a','b','c','d','e','f','g','h'];
+  files.forEach(f => {
+    const el=document.createElement('div');
+    el.className='file-label'; el.textContent=f;
+    fileLabels.appendChild(el);
+  });
+}
+
+newGame();
+</script>
+</body>
+</html>
