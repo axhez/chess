@@ -1,6 +1,6 @@
 # Chess Project
 
-Single-file web chess game (`chess.html`). All HTML, CSS, and JS lives in that one file — do not split into multiple files.
+Single-file web chess game (`index.html`). All HTML, CSS, and JS lives in that one file — do not split into multiple files.
 
 ## Stack
 - Vanilla JS, no frameworks or libraries
